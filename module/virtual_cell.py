@@ -25,7 +25,7 @@ def load_data(fn, flatten=False):
 
     return newdata, nums
 
-def predict(parts):
+def predict(parts, classes=6):
     def feed(parts):
         data = []
         for id, part in parts:
@@ -34,8 +34,8 @@ def predict(parts):
                 d[k, m] = 1
             data.append(d)
         data = np.array(data)
-        label = np.zeros((6, 6))
-        for i in range(6):
+        label = np.zeros((classes, classes))
+        for i in range(classes):
             label[i, i] = 1
         return {'inputs:0': data, 'labels:0': label}
 
@@ -44,7 +44,7 @@ def predict(parts):
         per_nums = [] # 每类中所使用的每类机器的数目
         all_cls_nums = {} # 保存所有类别中，所使用的机器的个数
         #print('工件类别如下：')
-        for cls_index in range(6):
+        for cls_index in range(classes):
             #print('第%d类：' % cls_index)
             one_cls = []
             cls_m_num = {} # 类别中所使用的每类机器的数目
@@ -92,7 +92,6 @@ class CellSchedule():
         self.parts_cls = self.id2part()
         self.process_num = self.cac_process_num()
         self.spare_machine_num = self.cac_spare_machine_num()
-        #self.cell = cells
         self.machine_process_t = machine_process_t
         self.transform_time = transform_time
 
@@ -148,28 +147,90 @@ class CellSchedule():
 
         return spare_nums
 
-    def cell_alloc(self, parts):
-        weights, parts_cls = predict(parts)
-        print('工件分类:\n', parts_cls)
+    def cell_alloc(self, parts, classes):
+        weights, part_cell = predict(parts, classes)
+        print('工件分类:\n', part_cell)
         machines, machine_nums = cac_cls_machine_num()
         cells = alloc_machine(weights, machines, machine_nums)
+        ncells = []
+        for cid, machines in enumerate(cells):
+            ncell = [[] for i in range(10)]
+            for mid in machines:
+                for mcls in range(10):
+                    if mid in self.m_cls2ids(mcls):
+                        ncell[mcls].append(mid)
+            ncells.append(ncell)
+
         print('虚拟单元：\n', cells)
-        return parts_cls, cells
+        return part_cell, cells, ncells
+
+    def regene_parts_cls_in_cell(self, parts_cls, part_cell, cells):
+        def map_part_with_cell(pid):
+            # 由工件id获取其单元id
+            for cid, cell in enumerate(part_cell):
+                if pid in cell:
+                    return cid
+
+        parts_cls_in_cell = []
+        for pid, part in enumerate(parts_cls):
+            process_j = []
+            for j, process in enumerate(part):
+                ms = []
+                for machine in process:
+                    if map_part_with_cell(pid) != None and machine in cells[map_part_with_cell(pid)]:
+                        ms.append(machine)
+                        #print('part-{},process-{},machine-{}=>{}'.format(pid, j, machine, cells[map_part_with_cell(pid)]))
+                    else:
+                        #print('part-{},process-{},machine-{}'.format(pid, j, machine))
+                        pass
+                    if map_part_with_cell(pid) == None:
+                        #print(pid, len(process))
+                        pass
+                if ms == []: ms.append(-1)
+                process_j.append(ms)
+            parts_cls_in_cell.append(process_j)
+
+        print('工件在单元中可选机器id:\n',parts_cls_in_cell)
+        return parts_cls_in_cell
 
     def schedule(self):
+        def cac_machine_num_in_cell(pid, part, reschedule=False):
+            if reschedule and pid in self.paras['cancel_order']:
+                num = self.spare_machine_num[pid]
+                num = [0 for i in num]
+                return num
+
+            cid = 100
+            for id, cell in enumerate(part_cell):
+                if pid in cell:
+                    cid = id
+                    break
+            part_spare_machine_num_in_cell = []
+            for mcls in part:
+                num = len(cells_m_in_cls[cid][mcls])
+                part_spare_machine_num_in_cell.append(num)
+            return part_spare_machine_num_in_cell
+
         print('初调度分配虚拟单元：')
         print('----------------------------------------------------------------------------------------------------')
         parts = [(id, part) for id, part in enumerate(self.parts[:15])]
-        part_cls, cells = self.cell_alloc(parts)
+        part_cell, cells, cells_m_in_cls = self.cell_alloc(parts, classes=self.paras['cell_size'])
+        spare_machine_num_in_cells = []
+        [spare_machine_num_in_cells.append(cac_machine_num_in_cell(pid, part)) for pid, part in parts]
+        print('工件在各单元中可选机器数量：\n', spare_machine_num_in_cells)
+        parts_cls = self.regene_parts_cls_in_cell(self.parts_cls[:15], part_cell, cells)
         print('----------------------------------------------------------------------------------------------------')
+
         data = {
             'cell': cells,
+            'cells_m_in_cls': cells_m_in_cls,
             'parts_process_num': self.process_num,
             'machine_num': len(self.machine_process_t),
-            'spare_m_num': self.spare_machine_num,
-            'parts_cls': self.parts_cls,
-            'parts_id': self.parts_id,
+            'spare_m_num': spare_machine_num_in_cells,
+            'parts_cls': parts_cls, #包含了每道工序的待选机器id信息
+            'parts_id': self.parts_id, #所有工件的id
             'name': self.name,
+            'part_cell': part_cell,
             'machine_process_t': self.machine_process_t,
             'transform_time': self.transform_time,
         }
@@ -178,10 +239,25 @@ class CellSchedule():
         print('重调度分配虚拟单元：')
         print('----------------------------------------------------------------------------------------------------')
         parts = [(id, part) for id, part in enumerate(self.parts) if id not in self.paras['cancel_order']]
-        part_cls, cells = self.cell_alloc(parts)
+        part_cell, cells, cells_m_in_cls = self.cell_alloc(parts, classes=self.paras['cell_size'])
+        spare_machine_num_in_cells = []
+        [spare_machine_num_in_cells.append(cac_machine_num_in_cell(pid, part, reschedule=True)) for pid, part in enumerate(self.parts)]
+        print('工件在各单元中可选机器：\n', spare_machine_num_in_cells)
+        parts_cls = self.regene_parts_cls_in_cell(self.parts_cls, part_cell, cells)
         print('----------------------------------------------------------------------------------------------------')
-        data['name'] = 'reschedule'
-        data['cell'] = cells
+        data = {
+            'cell': cells,
+            'cells_m_in_cls': cells_m_in_cls,
+            'parts_process_num': self.process_num,
+            'machine_num': len(self.machine_process_t),
+            'spare_m_num': spare_machine_num_in_cells,
+            'parts_cls': parts_cls,  # 包含了每道工序的待选机器id信息
+            'parts_id': self.parts_id,  # 所有工件的id
+            'name': 'reschedule',
+            'part_cell': part_cell,
+            'machine_process_t': self.machine_process_t,
+            'transform_time': self.transform_time,
+        }
         ade_r = ADE(paras=self.paras, reschedule=True, data=data)
         ade_r.saved_objs = ade.saved_objs
         ade_r.run()

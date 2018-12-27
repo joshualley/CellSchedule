@@ -186,7 +186,7 @@ def classifer_train(parts, epoches, classes, issave=False, seed=6):
     with tf.Session() as sess:
         init = tf.global_variables_initializer()
         sess.run(init)
-        feed_dict = feed(nparts[:classes])
+        feed_dict = feed(nparts[0:2:14])
         for epoch in range(epoches):
             sess.run(optimizer, feed_dict=feed_dict)
             if epoch % 10 == 0:
@@ -222,7 +222,7 @@ def cac_cls_machine_num():
 def alloc_machine(weights, machines, machine_nums):
     # 以存有二元组(机器加工时长，机器id)的list：ms来表示机器
     ms = []
-    id = 0
+    id = 0 # 机器id
     for m_cls in machines:
         l = len(m_cls)
         m = []
@@ -261,7 +261,7 @@ def main():
     #machines = gene_machines(machine_class=10, total_num=30)
     #transform_time(machine_num=30)
     parts = gene_parts(part_num=20, process_range=(2, 4))
-    weights, parts_cls = classifer_train(parts, epoches=100, classes=6)
+    weights, parts_cls = classifer_train(parts, epoches=200, classes=6, seed=100, issave=True)
     print('工件分类：\n', parts_cls)
     machines, machine_nums = cac_cls_machine_num()
     alloc_machines = alloc_machine(weights, machines, machine_nums)
@@ -269,6 +269,12 @@ def main():
     for cell in alloc_machines:
         print(cell)
 
+def gene_data(mcls, mnum, pnum):
+    machines = gene_machines(machine_class=mcls, total_num=mnum)
+    transform_time(machine_num=mnum)
+    gene_parts(part_num=pnum, process_range=(2, 4))
 
-if __name__ == '__main__':
-    main()
+def train_classifer(classes, seed):
+    parts = gene_parts(part_num=20, process_range=(2, 4))
+    classifer_train(parts, epoches=200, classes=classes, seed=seed, issave=True)
+

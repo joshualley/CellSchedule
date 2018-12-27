@@ -5,6 +5,7 @@ import matplotlib.patches as patches
 import time
 import os
 import copy
+plt.rc('font',family='Times New Roman')
 
 class State():
     M_BUSY = 0
@@ -134,8 +135,10 @@ class ADE(object):
         self.minfits = []
         self.avgfits = []
 
-        self.canceled_order = [3,7]
+        self.canceled_order = paras['cancel_order']
         self.cell = data['cell']
+        #self.cells_m_in_cls = data['cells_m_in_cls']
+        #self.part_cell = data['part_cell']
         self.total_process_num = sum(data['parts_process_num'])
         self.machine_num = data['machine_num']
         self.machine_process_t = data['machine_process_t']
@@ -349,12 +352,7 @@ class ADE(object):
             X[x_index[i]] = A[i]
         #print('X:', X)
 
-        def map_path_with_cell():
-            pass
-
         for i in range(self.part_num):
-            #print(self.process_spare_machine_num[i])
-            #print(self.process_spare_machine_num[i][0:self.parts_process_num[i]])
             Y[i] = np.ceil(Y[i] * self.process_spare_machine_num[i])
 
         Y = [list(i) for i in Y]
@@ -396,11 +394,15 @@ class ADE(object):
                 result[counter, 1] = process_j + 1
                 result[counter, 2] = mid
                 result[counter, 3] = st
+                item = None
                 for bt in part_i.break_st:
+                    item = bt
                     if bt[0] == process_j:
                         result[counter, 4] = et + 30
                     else:
                         result[counter, 4] = et
+                if not item:
+                    result[counter, 4] = et
                 result[counter, 5] = pt
                 result[counter, 6] = wt
                 result[counter, 7] = tt
@@ -447,7 +449,7 @@ class ADE(object):
         plt.yticks([])
         plt.xticks([])
         plt.box(False)
-        plt.margins(1)
+        plt.margins(0)
         if self.reschedule:
             plt.title('Cell Reschedule')
         else:
@@ -487,9 +489,9 @@ class ADE(object):
                             plt.text(st+tpt/2-len(tx)*fs/2, h_cell*i+h_cell/4, tx, fontsize=fs)
 
 
-            #ax.set_yticks(range(int(h_cell / 2), h_cell * max_len, h_cell))
+            ax.set_yticks(range(int(h_cell / 2), h_cell * max_len, h_cell))
             m_len = len(mids)
-            ax.set_yticks(range(m_len, h_cell * max_len, h_cell))
+            #ax.set_yticks(range(m_len, h_cell * max_len, h_cell))
             #mids = [id for id in mids]
             ax.set_yticklabels(mids)
 
