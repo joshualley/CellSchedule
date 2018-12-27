@@ -1,108 +1,103 @@
 from PyQt5.QtWidgets import QApplication, QMainWindow
-from PyQt5 import QtCore
+from PyQt5.QtCore import QCoreApplication, pyqtSignal
 from PyQt5.QtGui import QImage, QPixmap
 from gui.gui import Ui_MainWindow
-import threading, sys, os, time
+import threading, os, time
 import numpy as np
 import pandas as pd
-from module.gene_data_and_train_net import train_classifer
+from module.gene_data_and_train_net import train_classifer, gene_data,writeAndPrintLog
 from module.virtual_cell import load_data, CellSchedule
-
-class MyThread(threading.Thread):
-
-    def __init__(self, func, *arg):
-        super().__init__()
-        self.func = func
-        self.arg = arg
-        self.__flag = threading.Event()  # 用于暂停线程的标识
-        self.__flag.set()  # 设置为True
-        self.__running = threading.Event()  # 用于停止线程的标识
-        self.__running.set()
-
-    def run(self):
-        while self.__running.isSet():
-            self.__flag.wait()
-            if self.arg != ():
-                self.func(*self.arg)
-            else:
-                self.func()
-
-    def pause(self):
-        self.__flag.clear()
-
-    def resume(self):
-        self.__flag.set()
-
-    def destroy(self):
-        self.__flag.set()  # 将线程从暂停状态恢复, 如何已经暂停的话
-        self.__running.clear()
+from module.mthread import MyThread, MyQThread
 
 
 class APP(QMainWindow, Ui_MainWindow, threading.Thread):
-    _translate = QtCore.QCoreApplication.translate
-
+    _translate = QCoreApplication.translate
+    disp_text_signal = pyqtSignal(str)
     def __init__(self):
         super(APP, self).__init__()
         self.setupUi(self)
         self.setButton()
         self.initUI()
-        self.thread = None
-
-    def setButton(self):
-        self.btn_cls.clicked[bool].connect(self.btnfunc_train_classifer)
-        self.btn_sche.clicked[bool].connect(self.btnfunc_schedule)
+        self.disp_text_signal.connect(self.display_log)
 
     def initUI(self):
-        self.display.setText(self._translate("MainWindow", "请输入参数，多个数据的输入请使用英文','分开，如：6,10"))
+        self.display_log("请输入参数，多个数据的输入请使用英文','分开，如：6,10")
         self.cancel_order.setText(self._translate("MainWindow", "3,7"))
         self.weights.setText(self._translate("MainWindow", "0.9,0.1"))
-        self.cell_size.setText(self._translate("MainWindow", "6,10"))
+        self.cell_size.setText(self._translate("MainWindow", "6"))
+        self.seed.setText(self._translate("MainWindow", "100"))
         self.CR.setText(self._translate("MainWindow", "0.6"))
         self.Np.setText(self._translate("MainWindow", "100"))
         self.Gm.setText(self._translate("MainWindow", "10"))
         self.rt.setText(self._translate("MainWindow", "50"))
         self.strategy.setText(self._translate("MainWindow", "greedy"))
+        self.pnum.setText(self._translate("MainWindow", "20"))
+        self.mnum.setText(self._translate("MainWindow", "30"))
+        self.mcls.setText(self._translate("MainWindow", "10"))
         t = MyThread(func=self.drawImg)
         t.setDaemon(True)
         t.start()
+        if os.path.exists('temp/analy.png'):
+            os.remove('temp/analy.png')
 
+    def setButton(self):
+        self.btn_cls.clicked[bool].connect(self.btnfunc_train_classifer)
+        self.btn_sche.clicked[bool].connect(self.btnfunc_schedule)
+        self.btn_gene_data.clicked[bool].connect(self.btnfunc_genedata)
 
     def btnfunc_train_classifer(self):
-        paras = self.cell_size.toPlainText().split(',')
-        if len(paras) == 1 and paras[0] != '':
-            cls = int(paras[0])
-            seed = 8
-        elif len(paras) == 2:
-            cls = int(paras[0])
-            seed = int(paras[1])
-        else:
-            cls = 6
-            seed = 8
-        text = "工件分类器训练中。。。\n虚拟单元大小为{}，随机种子为{}".format(cls, seed)
-        self.display.setText(self._translate("MainWindow", text))
+        cls = self.cell_size.text()
+        seed = self.seed.text()
+        if cls == '' or seed == '':
+            text = "虚拟单元大小及训练使用的随机种子不能为空"
+            self.display_log(text, clear=True)
+            return
+        cls = int(cls)
+        seed = float(seed)
+        text = "工件聚类器训练中...\n虚拟单元大小为{}，随机种子为{}".format(cls, seed)
+        self.display_log(text)
         t = threading.Thread(target=train_classifer, args=(cls, seed))
         t.setDaemon(True)
         t.start()
+        t.join()
+        with open('temp/result.log', 'r') as f:
+            text = f.read()
+        self.display_log(text)
 
+    def btnfunc_genedata(self):
+        pnum = self.pnum.text()
+        mnum = self.mnum.text()
+        mcls = self.mcls.text()
+        if pnum == '' and mnum == '' and mcls == '':
+            text = '工件数量，机器数量，机器种类不能为空'
+            self.display_log(text, clear=True)
+            return
+        gene_data(int(mcls), int(mnum), int(pnum))
 
     def btnfunc_schedule(self):
         paras = self.getInputs()
         text = '调度参数设置如下：\n' + str(paras)
-        self.display.setText(self._translate("MainWindow", text))
+        self.display_log(text, clear=True)
         t = threading.Thread(target=self.shedule, args=(paras,))
         t.setDaemon(True)
         t.start()
 
-
+    def display_log(self, newtext, clear=False):
+        if clear:
+            text = newtext
+        else:
+            oldtext = self.display.toPlainText()
+            text =  oldtext + newtext + '\n\n'
+        self.display.setText(self._translate("MainWindow", text))
 
     def shedule(self, paras):
+        def dispfunc(text):
+            self.disp_text_signal.emit(text)
         transform_time = np.array(pd.read_csv('data/transform_time.csv', header=None))
-        # ---------------------------------------------------------------------------------#
-        ms_process_t, m_per_cls_num = load_data('data/machines.csv', flatten=True)  #
-        print('机器加工时间:\n', ms_process_t)  #
-        # ---------------------------------------------------------------------------------#
+        ms_process_t, m_per_cls_num = load_data('data/machines.csv', flatten=True)
+        writeAndPrintLog('机器加工时间:\n{}'.format(ms_process_t), dispfunc)
         parts, part_process_num = load_data('data/parts.csv')
-        print('工件:\n', parts)
+        writeAndPrintLog('工件:\n{}'.format(parts), dispfunc)
 
         c = CellSchedule(parts=parts,
                          machine_process_t=ms_process_t,
@@ -110,28 +105,33 @@ class APP(QMainWindow, Ui_MainWindow, threading.Thread):
                          transform_time=transform_time,
                          paras=paras,
                          name='schedule')
-        print('每个工件的工序数:\n', c.process_num)
-        print('每道工序的可选机器数:\n', c.spare_machine_num)
-        c.schedule()
+        writeAndPrintLog('每个工件的工序数:\n{}'.format(c.process_num), dispfunc)
+        writeAndPrintLog('每道工序的可选机器数:\n{}'.format(c.spare_machine_num), dispfunc)
+        if os.path.exists('temp/result.log'):
+            os.remove('temp/result.log')
+        c.schedule(dispfunc)
 
     def drawImg(self):
+        time.sleep(0.5)
         if os.path.exists('temp/analy.png'):
-            time.sleep(0.5)
             with open('temp/analy.png', 'rb') as f:
                 img = f.read()
-            image = QImage.fromData(img)
-            pixmap = QPixmap.fromImage(image)
-            self.img_analysis.setPixmap(pixmap)
+        else:
+            with open('temp/preanaly.png', 'rb') as f:
+                img = f.read()
+        image = QImage.fromData(img)
+        pixmap = QPixmap.fromImage(image)
+        self.img_analysis.setPixmap(pixmap)
 
     def getInputs(self):
-        cell_size = self.cell_size.toPlainText().split(',')[0]
-        CR = self.CR.toPlainText()
-        Np = self.Np.toPlainText()
-        Gm = self.Gm.toPlainText()
-        RT = self.rt.toPlainText()
-        weights = self.weights.toPlainText().split(',')
-        cancel_order = self.cancel_order.toPlainText().split(',')
-        strategy = self.strategy.toPlainText()
+        cell_size = self.cell_size.text()
+        CR = self.CR.text()
+        Np = self.Np.text()
+        Gm = self.Gm.text()
+        RT = self.rt.text()
+        weights = self.weights.text().split(',')
+        cancel_order = self.cancel_order.text().split(',')
+        strategy = self.strategy.text()
         if cell_size == '' and CR == '' and Np == '' and Gm == '' and RT == '' \
                 and weights == [''] and cancel_order == [''] and strategy == '':
             return None
@@ -149,12 +149,3 @@ class APP(QMainWindow, Ui_MainWindow, threading.Thread):
             }
             return paras
 
-def main():
-    app = QApplication(sys.argv)
-    window = APP()
-    window.show()
-    app.exec_()
-    app.exit()
-
-if __name__ == '__main__':
-    main()

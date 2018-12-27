@@ -1,5 +1,5 @@
-from cell_schedule.gene_data_and_train_net import cac_cls_machine_num, alloc_machine
-from cell_schedule.ade_fsm import ADE
+from module.gene_data_and_train_net import cac_cls_machine_num, alloc_machine, writeAndPrintLog
+from module.ade_fsm import ADE
 import tensorflow as tf
 import numpy as np
 import pandas as pd
@@ -149,7 +149,7 @@ class CellSchedule():
 
     def cell_alloc(self, parts, classes):
         weights, part_cell = predict(parts, classes)
-        print('工件分类:\n', part_cell)
+        writeAndPrintLog('工件分类:\n{}'.format(part_cell), self.dispfunc)
         machines, machine_nums = cac_cls_machine_num()
         cells = alloc_machine(weights, machines, machine_nums)
         ncells = []
@@ -161,7 +161,7 @@ class CellSchedule():
                         ncell[mcls].append(mid)
             ncells.append(ncell)
 
-        print('虚拟单元：\n', cells)
+        writeAndPrintLog('虚拟单元：\n{}'.format(cells), self.dispfunc)
         return part_cell, cells, ncells
 
     def regene_parts_cls_in_cell(self, parts_cls, part_cell, cells):
@@ -190,10 +190,11 @@ class CellSchedule():
                 process_j.append(ms)
             parts_cls_in_cell.append(process_j)
 
-        print('工件在单元中可选机器id:\n',parts_cls_in_cell)
+        writeAndPrintLog('工件在单元中可选机器id:\n{}'.format(parts_cls_in_cell), self.dispfunc)
         return parts_cls_in_cell
 
-    def schedule(self):
+    def schedule(self, dispfunc=None):
+        self.dispfunc = dispfunc
         def cac_machine_num_in_cell(pid, part, reschedule=False):
             if reschedule and pid in self.paras['cancel_order']:
                 num = self.spare_machine_num[pid]
@@ -211,15 +212,17 @@ class CellSchedule():
                 part_spare_machine_num_in_cell.append(num)
             return part_spare_machine_num_in_cell
 
-        print('初调度分配虚拟单元：')
-        print('----------------------------------------------------------------------------------------------------')
+        writeAndPrintLog('初调度分配虚拟单元：', dispfunc)
+        writeAndPrintLog('------------------------------------------------------------------------------------',
+                         dispfunc)
         parts = [(id, part) for id, part in enumerate(self.parts[:15])]
         part_cell, cells, cells_m_in_cls = self.cell_alloc(parts, classes=self.paras['cell_size'])
         spare_machine_num_in_cells = []
         [spare_machine_num_in_cells.append(cac_machine_num_in_cell(pid, part)) for pid, part in parts]
-        print('工件在各单元中可选机器数量：\n', spare_machine_num_in_cells)
+        writeAndPrintLog('工件在各单元中可选机器数量：\n{}'.format(spare_machine_num_in_cells), dispfunc)
         parts_cls = self.regene_parts_cls_in_cell(self.parts_cls[:15], part_cell, cells)
-        print('----------------------------------------------------------------------------------------------------')
+        writeAndPrintLog('------------------------------------------------------------------------------------',
+                         dispfunc)
 
         data = {
             'cell': cells,
@@ -233,18 +236,21 @@ class CellSchedule():
             'part_cell': part_cell,
             'machine_process_t': self.machine_process_t,
             'transform_time': self.transform_time,
+            'dispfunc': self.dispfunc
         }
         ade = ADE(paras=self.paras, data=data)
         ade.run()
-        print('重调度分配虚拟单元：')
-        print('----------------------------------------------------------------------------------------------------')
+        writeAndPrintLog('重调度分配虚拟单元：', dispfunc)
+        writeAndPrintLog('------------------------------------------------------------------------------------',
+                         dispfunc)
         parts = [(id, part) for id, part in enumerate(self.parts) if id not in self.paras['cancel_order']]
         part_cell, cells, cells_m_in_cls = self.cell_alloc(parts, classes=self.paras['cell_size'])
         spare_machine_num_in_cells = []
         [spare_machine_num_in_cells.append(cac_machine_num_in_cell(pid, part, reschedule=True)) for pid, part in enumerate(self.parts)]
-        print('工件在各单元中可选机器：\n', spare_machine_num_in_cells)
+        writeAndPrintLog('工件在各单元中可选机器：\n{}'.format(spare_machine_num_in_cells), dispfunc)
         parts_cls = self.regene_parts_cls_in_cell(self.parts_cls, part_cell, cells)
-        print('----------------------------------------------------------------------------------------------------')
+        writeAndPrintLog('------------------------------------------------------------------------------------',
+                         dispfunc)
         data = {
             'cell': cells,
             'cells_m_in_cls': cells_m_in_cls,
@@ -257,6 +263,7 @@ class CellSchedule():
             'part_cell': part_cell,
             'machine_process_t': self.machine_process_t,
             'transform_time': self.transform_time,
+            'dispfunc': self.dispfunc
         }
         ade_r = ADE(paras=self.paras, reschedule=True, data=data)
         ade_r.saved_objs = ade.saved_objs

@@ -47,7 +47,7 @@ def gene_machines(machine_class=10, total_num=30):
                 count += 1
                 nrow.append(int(col))
         nmachines.append(nrow)
-    print('Machines:\n', nmachines, '\nnumber:', count)
+    writeAndPrintLog('Machines:\n{}\nnumber:{}'.format(nmachines, count))
     return nmachines
 
 def gene_parts(fn='data/parts.csv', part_num=30, machines_num=10, process_range=(2, 4)):
@@ -146,15 +146,15 @@ def classifer_train(parts, epoches, classes, issave=False, seed=6):
         total_cls = [] # 保存每个类别的工件id
         per_nums = [] # 每类中所使用的每类机器的数目
         all_cls_nums = {} # 保存所有类别中，所使用的机器的个数
-        print('工件类别如下：')
+        writeAndPrintLog('工件类别如下：')
         for cls_index in range(classes):
-            print('第%d类：' % cls_index)
+            writeAndPrintLog('第{}类：'.format(cls_index))
             one_cls = []
             cls_m_num = {} # 类别中所使用的每类机器的数目
             for part_i, part_cls in enumerate(results):
                 if part_cls == cls_index:
                     one_cls.append(part_i)
-                    print(parts[part_i])
+                    writeAndPrintLog(str(parts[part_i]))
                     for m in parts[part_i]:
                         all_cls_nums.setdefault(m, 0)
                         all_cls_nums[m] += 1
@@ -191,7 +191,7 @@ def classifer_train(parts, epoches, classes, issave=False, seed=6):
             sess.run(optimizer, feed_dict=feed_dict)
             if epoch % 10 == 0:
                 o = sess.run(out, feed_dict=feed(nparts))
-                print('{0}: {1}'.format(epoch, o))
+                writeAndPrintLog('epoch-{0}: {1}'.format(epoch, o))
         if issave:
             saver.save(sess, 'model/model')
         o = sess.run(out, feed_dict=feed(nparts))
@@ -278,3 +278,8 @@ def train_classifer(classes, seed):
     parts = gene_parts(part_num=20, process_range=(2, 4))
     classifer_train(parts, epoches=200, classes=classes, seed=seed, issave=True)
 
+def writeAndPrintLog(text, dispfunc=None):
+    #print(text)
+    if dispfunc: dispfunc(text)
+    with open('temp/result.log', 'a') as f:
+        f.write(text+'\n')

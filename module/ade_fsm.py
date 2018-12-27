@@ -5,6 +5,7 @@ import matplotlib.patches as patches
 import time
 import os
 import copy
+from module.gene_data_and_train_net import writeAndPrintLog
 plt.rc('font',family='Times New Roman')
 
 class State():
@@ -135,10 +136,11 @@ class ADE(object):
         self.minfits = []
         self.avgfits = []
 
+        self.dispfunc = data['dispfunc']
         self.canceled_order = paras['cancel_order']
         self.cell = data['cell']
         #self.cells_m_in_cls = data['cells_m_in_cls']
-        #self.part_cell = data['part_cell']
+        self.part_cell = data['part_cell']
         self.total_process_num = sum(data['parts_process_num'])
         self.machine_num = data['machine_num']
         self.machine_process_t = data['machine_process_t']
@@ -379,7 +381,7 @@ class ADE(object):
             if self.reschedule:
                 #退订订单
                 if i in self.canceled_order:
-                    print("%d 号工件退订" %(i))
+                    writeAndPrintLog("{}号工件退订".format(i), self.dispfunc)
                     continue
             part_i = part_objs[int(i)]
             for process_j in range(part_i.max_process + 1):
@@ -411,14 +413,14 @@ class ADE(object):
         pf = pd.DataFrame(result)
         pf.columns = ['工件号', '工序号', '机器编号', '起始时间',
                       '结束时间', '加工时间', '等待时间', '运输时间']
-        print('调度结果：\n', pf)
+        writeAndPrintLog('调度结果：\n{}'.format(pf), self.dispfunc)
         if not os.path.exists('result/'):
             os.mkdir('result')
         fn = 'result/'+ self.name +'.csv'
         pf.to_csv(fn)
         if not self.reschedule:
             fp = pf.where(pf['起始时间'] <= self.reschedule_t).dropna()
-            print("已完工工序：\n", fp)
+            writeAndPrintLog("已完工工序：\n{}".format(fp), self.dispfunc)
             fn = 'result/' + 'finish_process' + '.csv'
             fp.to_csv(fn)
 
@@ -428,13 +430,14 @@ class ADE(object):
         tft = max(p_ft)
         twt = sum(result[:, 6])
         ttt = sum(result[:, 7])
-        print('完工时间：%d, 总等待时间：%d，总运输时间：%d' % (tft, twt, ttt))
+        writeAndPrintLog('完工时间：{}, 总等待时间：{}，总运输时间：{}'.format(tft, twt, ttt), self.dispfunc)
 
         return tft
 
     def gant_chart(self):
         best_g = self.minfits.index(min(self.minfits))
-        print('最优个体出现在第%d代，适应度为：%2.2f' %(best_g, min(self.all_gene_fits[best_g])))
+        writeAndPrintLog('最优个体出现在第{}代，适应度为：{}'
+                         .format(best_g, min(self.all_gene_fits[best_g])), self.dispfunc)
         best_i = 2 * self.all_gene_fits[best_g].index(min(self.all_gene_fits[best_g])) + 1
 
         self.part_objs = self.per_gene_individuals[best_g][best_i]
@@ -443,6 +446,10 @@ class ADE(object):
 
         #虚拟单元调度图
         f1 = plt.figure()
+        def pid2cid(pid):
+            for cid, cell in enumerate(self.part_cell):
+                if pid in cell:
+                    return cid
 
         plt.xlabel('processing time', labelpad=20)
         #plt.ylabel('Machine', labelpad=20)
@@ -477,10 +484,13 @@ class ADE(object):
                             st = part.start_time[j]
                             et = part.end_time[j]
                             tpt = et - st
-                            ax.broken_barh([(st, tpt)], [h_cell * i, h_cell-10], facecolors='w', edgecolors='b')
+                            if cell_k == pid2cid(part.part_id):
+                                ax.broken_barh([(st, tpt)], [h_cell * i, h_cell-10], facecolors='w', edgecolors='b')
+                            else:
+                                ax.broken_barh([(st, tpt)], [h_cell * i, h_cell - 10], facecolors='w', edgecolors='y')
                             for bt in part.break_st:
                                 if bt[0] == j:
-                                    ax.broken_barh([(bt[1], 30)], [h_cell * i, h_cell-10], facecolors='r')
+                                    ax.broken_barh([(bt[1], 30)], [h_cell * i, h_cell-13], facecolors='r')
                                     #plt.text(bt[1] + 14, h_cell * i + h_cell / 2 - 20, 'E', fontsize=6)
 
                             #print("工件%d的工序%d加工时间：%d, 故障时间：%d" %(part.part_id, j,tpt, tpt-pt))
@@ -524,8 +534,8 @@ class ADE(object):
                 currentAxis.add_patch(rect)
                 for bt in part.break_st:
                     if bt[0] == process_j:
-                        print("机器%d在%d时刻加工工件%d的第%d道工序时发生故障"
-                              %(part.choosed_machines[process_j]+1, bt[1], part.part_id, process_j+1))
+                        writeAndPrintLog("机器{}在{}时刻加工工件{}的第{}道工序时发生故障"
+                              .format(part.choosed_machines[process_j]+1, bt[1], part.part_id, process_j+1), self.dispfunc)
                         ax.broken_barh([(bt[1], 30)], [h * mid, h-5], facecolors='r')
                         #plt.text(bt[1]+14, h * mid + h / 2 - 4, 'E', fontsize=8)
                 tx = str(part.part_id) + '-' + str(process_j+1)
@@ -550,14 +560,14 @@ class ADE(object):
         st = time.time()
         fts = []
 
-        plt.ion()
+        #plt.ion()
         f = plt.figure()
         if self.reschedule:
             plt.title('Analysis of Rescheduling Astringency')
-            print('重调度开始：')
+            writeAndPrintLog('重调度开始：', self.dispfunc)
         else:
             plt.title('Analysis of Scheduling Astringency')
-            print('初调度开始：')
+            writeAndPrintLog('初调度开始：', self.dispfunc)
 
         while self.G < self.Gm and self.T > self.T_end:
             self.variation()
@@ -589,16 +599,19 @@ class ADE(object):
             plt.legend(['AvgFit', 'MinFit'], loc='upper right')
             plt.xlabel('Generation')
             plt.ylabel('Fitness')
-            plt.pause(0.0001)
-            print('[Name=%s,G=%d,T=%2.2fK] FT:%dmin, WT:%dmin, TT:%dmin, Fit:%2.2f, Time:%2.2fs, ETA:%dm %ds'
-                  % (self.name, self.G, self.T, ft, wt, tt, fitness, temp * time_step, l_m, l_s))
+            if not os.path.exists('temp/'):
+                os.mkdir('temp/')
+            plt.savefig('temp/analy.png')
+            #plt.pause(0.01)
+            writeAndPrintLog('[Name=%s,G=%d,T=%2.2fK] FT:%dmin, WT:%dmin, TT:%dmin, Fit:%2.2f, Time:%2.2fs, ETA:%dm %ds'
+                  % (self.name, self.G, self.T, ft, wt, tt, fitness, temp * time_step, l_m, l_s), self.dispfunc)
             st = time.time()
             self.G += 1
             self.T *= self.temperature_factor
             self.per_gene_individuals.append(self.per_gene_part_obj_set)
             self.per_gene_part_obj_set = []
 
-        plt.ioff()
+        #plt.ioff()
         if self.reschedule:
             plt.savefig('result/reschedule_astringency.png')
         else:
